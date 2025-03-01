@@ -1,0 +1,107 @@
+{
+  "nodes": [
+    {
+      "name": "cloud_server",
+      "type": "cloud",
+      "location": [0.0, 0.0],
+      "resources": {
+        "cpu_cores": 32,
+        "cpu_frequency": 3.0,
+        "ram": 65536,
+        "storage": 1000000
+      },
+      "bandwidth": 1000.0,
+      "parent_latency": 0.0
+    },
+    {
+      "name": "fog_node_1",
+      "type": "fog",
+      "location": [1.0, 1.0],
+      "resources": {
+        "cpu_cores": 8,
+        "cpu_frequency": 2.5,
+        "ram": 16384,
+        "storage": 32000
+      },
+      "bandwidth": 500.0,
+      "parent_latency": 20.0
+    },
+    {
+      "name": "edge_node_1",
+      "type": "edge",
+      "location": [1.5, 1.5],
+      "resources": {
+        "cpu_cores": 2,
+        "cpu_frequency": 1.5,
+        "ram": 2048,
+        "storage": 16000
+      },
+      "bandwidth": 100.0,
+      "parent_latency": 5.0
+    }
+  ],
+  "connections": [
+    {
+      "from": "cloud_server",
+      "to": "fog_node_1",
+      "bandwidth": 1000.0,
+      "latency": 20.0
+    },
+    {
+      "from": "fog_node_1",
+      "to": "edge_node_1",
+      "bandwidth": 100.0,
+      "latency": 5.0
+    }
+  ],
+  "sensors": [
+    {
+      "name": "temp_sensor_1",
+      "type": "temperature",
+      "location": [1.5, 1.6],
+      "node_id": "edge_node_1",
+      "sampling_rate": 0.1,
+      "data_size": 20
+    },
+    {
+      "name": "traffic_sensor_1",
+      "type": "traffic",
+      "location": [1.6, 1.5],
+      "node_id": "edge_node_1",
+      "sampling_rate": 1.0,
+      "data_size": 500
+    }
+  ],
+  "actuators": [
+    {
+      "name": "traffic_light_1",
+      "type": "traffic_light",
+      "location": [48.8566, 2.3522],
+      "node_id": "edge_node_1",
+      "response_time": 0.2
+    }
+  ],
+  "services": [
+    {
+      "name": "traffic_monitoring",
+      "type": "traffic_management",
+      "node_id": "fog_node_1",
+      "cpu_required": 2,
+      "ram_required": 4096,
+      "storage_required": 8000,
+      "input_types": ["SENSOR_DATA"],
+      "output_types": ["COMMAND"]
+    },
+    {
+      "name": "data_analytics",
+      "type": "data_analytics",
+      "node_id": "cloud_server",
+      "cpu_required": 8,
+      "ram_required": 16384,
+      "storage_required": 32000,
+      "input_types": ["SENSOR_DATA", "SYSTEM_DATA"],
+      "output_types": ["ANALYTICS"]
+    }
+  ],
+  "simulation": { "max_time": 3600, "log_level": "INFO" }
+}
