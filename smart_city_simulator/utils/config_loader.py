@@ -143,51 +143,73 @@ class ConfigLoader:
             List of created Sensor objects
         """
         sensors = []
+        sensor_configs = config.get("sensors", [])
         
-        if "sensors" in config:
-            for sensor_data in config["sensors"]:
-                name = sensor_data.get("name", "unnamed_sensor")
-                
-                # Parse sensor type
-                type_str = sensor_data.get("type", "temperature")
-                try:
-                    sensor_type = SensorType[type_str.upper()]
-                except KeyError:
-                    self.logger.warning(f"Unknown sensor type '{type_str}', defaulting to TEMPERATURE")
-                    sensor_type = SensorType.TEMPERATURE
-                
-                # Extract sensor properties
-                location_data = sensor_data.get("location", [0.0, 0.0])
-                location = (location_data[0], location_data[1])
-                sampling_rate = sensor_data.get("sampling_rate", 1.0)  # Default 1 Hz
-                data_size = sensor_data.get("data_size", 100)  # Default 100 bytes per sample
-                accuracy = sensor_data.get("accuracy", 0.95)
-                battery_life = sensor_data.get("battery_life")  # Default None (powered)
-                range_meters = sensor_data.get("range", 10.0)
-                power_consumption = sensor_data.get("power_consumption", 0.1)  # Default 0.1 W
-                
-                # Create the sensor
-                sensor = Sensor(
-                    name=name,
-                    sensor_type=sensor_type,
-                    location=location,
-                    sampling_rate=sampling_rate,
-                    data_size=data_size,
-                    accuracy=accuracy,
-                    battery_life=battery_life,
-                    range_meters=range_meters,
-                    power_consumption=power_consumption
-                )
-                
-                # Attach to node if specified
-                if "node_id" in sensor_data:
-                    node_id = sensor_data["node_id"]
-                    if node_id in network.nodes:
+        # Create sensors
+        for sensor_data in sensor_configs:
+            # Extract sensor properties
+            name = sensor_data.get("name", f"sensor_{len(sensors)}")
+            sensor_type_str = sensor_data.get("type", "generic")
+            
+            # Parse sensor type
+            try:
+                sensor_type = SensorType[sensor_type_str.upper()]
+            except KeyError:
+                self.logger.warning(f"Unknown sensor type '{sensor_type_str}', defaulting to GENERIC")
+                sensor_type = SensorType.GENERIC
+            
+            # Extract location if available
+            location = None
+            if "location" in sensor_data:
+                location = (sensor_data["location"][0], sensor_data["location"][1])
+            
+            # Create the sensor
+            sensor = Sensor(
+                name=name,
+                sensor_type=sensor_type,
+                data_type=DataType[sensor_data.get("data_type", "TEMPERATURE").upper()],
+                generation_rate=sensor_data.get("generation_rate", 1.0),  # 1 data point per second by default
+                location=location
+            )
+            
+            # Attach to node if specified
+            if "node_id" in sensor_data:
+                node_id = sensor_data["node_id"]
+                if node_id in network.nodes:
+                    try:
                         sensor.attach_to_node(node_id)
-                    else:
-                        self.logger.warning(f"Sensor {name} references non-existent node {node_id}")
-                
-                sensors.append(sensor)
+                        self.logger.info(f"Sensor {name} attached to node {node_id}")
+                        
+                        # Also set sensor location to match node if sensor doesn't have one
+                        if not location and hasattr(network.nodes[node_id], 'location'):
+                            sensor.location = network.nodes[node_id].location
+                            self.logger.debug(f"Sensor {name} location set to match node {node_id}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to attach sensor {name} to node {node_id}: {str(e)}")
+                else:
+                    self.logger.warning(f"Sensor {name} references non-existent node {node_id}")
+                    
+                    # Try to find a suitable node based on location if provided
+                    if location:
+                        closest_node = None
+                        min_distance = float('inf')
+                        
+                        for node_id, node in network.nodes.items():
+                            if not hasattr(node, 'location'):
+                                continue
+                            
+                            distance = ((location[0] - node.location[0]) ** 2 + 
+                                       (location[1] - node.location[1]) ** 2) ** 0.5
+                            
+                            if distance < min_distance:
+                                min_distance = distance
+                                closest_node = node_id
+                        
+                        if closest_node:
+                            sensor.attach_to_node(closest_node)
+                            self.logger.info(f"Sensor {name} auto-attached to closest node {closest_node}")
+            
+            sensors.append(sensor)
         
         return sensors
     

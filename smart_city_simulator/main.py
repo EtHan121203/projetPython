@@ -25,7 +25,7 @@ from models.node import Node, NodeType, ComputeResources
 from models.sensor import Sensor, SensorType
 from models.actuator import Actuator, ActuatorType
 from models.service import Service, ServiceType
-from models.data import DataType
+from models.data import DataType, DataPriority
 from ui.gui import create_gui
 from utils.config_loader import create_config_loader
 from utils.statistics import create_statistics
@@ -130,6 +130,7 @@ def create_default_simulation(simulator):
         parent_latency=0.0
     )
     network.add_node(cloud_node)
+    simulator.add_node(cloud_node)  # Add to simulator's nodes dictionary
     
     # Create fog node
     fog_resources = ComputeResources(cpu_cores=8, cpu_frequency=2.5, ram=16384, storage=32000)
@@ -142,6 +143,7 @@ def create_default_simulation(simulator):
         parent_latency=20.0
     )
     network.add_node(fog_node)
+    simulator.add_node(fog_node)  # Add to simulator's nodes dictionary
     
     # Create edge node
     edge_resources = ComputeResources(cpu_cores=2, cpu_frequency=1.5, ram=2048, storage=16000)
@@ -154,6 +156,7 @@ def create_default_simulation(simulator):
         parent_latency=5.0
     )
     network.add_node(edge_node)
+    simulator.add_node(edge_node)  # Add to simulator's nodes dictionary
     
     # Create connections
     network.connect(cloud_node.id, fog_node.id, 1000.0, 20.0)
@@ -169,7 +172,8 @@ def create_default_simulation(simulator):
         sensor_type=SensorType.TEMPERATURE,
         location=(1.5, 1.6),
         sampling_rate=0.1,
-        data_size=20
+        data_size=20,
+        gateway_id=edge_node.id  # Set the gateway node explicitly
     )
     temp_sensor.attach_to_node(edge_node.id)
     simulator.add_sensor(temp_sensor)
@@ -179,7 +183,8 @@ def create_default_simulation(simulator):
         sensor_type=SensorType.TRAFFIC,
         location=(1.6, 1.5),
         sampling_rate=1.0,
-        data_size=500
+        data_size=500,
+        gateway_id=edge_node.id  # Set the gateway node explicitly
     )
     traffic_sensor.attach_to_node(edge_node.id)
     simulator.add_sensor(traffic_sensor)
@@ -189,7 +194,8 @@ def create_default_simulation(simulator):
         name="traffic_light_1",
         actuator_type=ActuatorType.TRAFFIC_LIGHT,
         response_time=0.2,
-        location=(48.8566, 2.3522)  # Example location (latitude, longitude)
+        location=(1.55, 1.55),
+        power_consumption=5.0
     )
     traffic_light.attach_to_node(edge_node.id)
     simulator.add_actuator(traffic_light)
@@ -233,6 +239,14 @@ def create_default_simulation(simulator):
     
     # Set simulator network
     simulator.network = network
+    
+    # Make sure services are added to the running_services dictionary of their nodes
+    if hasattr(fog_node, 'running_services') and traffic_service.id not in fog_node.running_services:
+        fog_node.running_services[traffic_service.id] = traffic_service
+    
+    if hasattr(cloud_node, 'running_services') and analytics_service.id not in cloud_node.running_services:
+        cloud_node.running_services[analytics_service.id] = analytics_service
+    
     logger.info("Default simulation setup created")
 
 def update_statistics(event, time, simulator, statistics):
@@ -246,7 +260,7 @@ def update_statistics(event, time, simulator, statistics):
     statistics.record_metric("event_queue_size", len(simulator.event_queue), time)
     
     # Record node resource usage
-    for node_id, node in simulator.network.nodes.items():
+    for node_id, node in simulator.nodes.items():
         if hasattr(node, 'resources'):
             cpu_usage, ram_usage, storage_usage = node.resources.usage_percentage()
             statistics.record_node_metrics(node_id, {
@@ -272,10 +286,19 @@ def update_statistics(event, time, simulator, statistics):
                     data_id=data_id,
                     source_id=event.source_id,
                     target_id=event.target_ids[0] if event.target_ids else "unknown",
-                    data_size=data.transmission_size,
+                    data_size=data.transmission_size if hasattr(data, 'transmission_size') else data.storage_size,
                     transmission_time=event.processing_time,
                     timestamp=time
                 )
+    
+    # Record data processing metrics
+    if event.event_type.value == "data_processing" and "data_id" in event.data:
+        data_id = event.data["data_id"]
+        service_id = event.source_id
+        
+        if data_id in simulator.data and service_id in simulator.services:
+            # Record that this service processed this data item
+            statistics.record_metric("data_processed", 1, time)
 
 def run_simulation(simulator, statistics, args):
     """Run the simulation"""
@@ -296,7 +319,7 @@ def run_simulation(simulator, statistics, args):
         metrics = simulator.get_metrics()
         logger.info(f"Processed {metrics['processed_events']} events")
         logger.info(f"Generated {metrics['total_data_generated']} data items")
-        logger.info(f"Processed {metrics['total_data_processed']} data items")
+        logger.info(f"Processed {metrics.get('total_data_processed', 0)} data items")
         
         # Export statistics if requested
         if args.output:

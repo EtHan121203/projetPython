@@ -19,7 +19,7 @@ class ActuatorState(Enum):
     FAILED = "failed"
 
 class Actuator:
-    def __init__(self, actuator_type: ActuatorType, node_id: Optional[str] = None, name: Optional[str] = None, response_time: Optional[float] = None, location: Optional[Tuple[float, float]] = None):
+    def __init__(self, actuator_type: ActuatorType, node_id: Optional[str] = None, name: Optional[str] = None, response_time: Optional[float] = None, location: Optional[Tuple[float, float]] = None, power_consumption: float = 0.0, reliability: float = 1.0):
         self.id = str(uuid.uuid4())
         self.actuator_type = actuator_type
         self.node_id = node_id
@@ -28,6 +28,8 @@ class Actuator:
         self.location = location
         self.state = ActuatorState.IDLE
         self.current_value = None
+        self.power_consumption = power_consumption
+        self.reliability = reliability
         self.actions = {
             ActuatorType.TRAFFIC_LIGHT: ["red", "yellow", "green"],
             ActuatorType.STREET_LIGHT: ["off", "dim", "bright"],

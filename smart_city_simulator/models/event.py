@@ -33,7 +33,7 @@ class Event:
     The sort_index field is used to sort events by occurrence time.
     """
     sort_index: float  # Used to sort events (occurrence time)
-    event_type: EventType = field(compare=False)  # Event type
+    event_type: Any = field(compare=False)  # Event type
     creation_time: float = field(compare=False)  # Event creation time 
     scheduled_time: float = field(compare=False)  # Scheduled occurrence time
     source_id: str = field(compare=False)  # Source ID of the event
@@ -47,13 +47,21 @@ class Event:
     
     def __post_init__(self):
         """Initialize the sort_index field for sorting in the priority queue"""
-
+        # Ensure priority is an integer to avoid type issues
+        if not hasattr(self, 'priority') or self.priority is None:
+            self.priority = 0
+            
+        # Convert priority to int if it's not already
+        try:
+            self.priority = int(self.priority)
+        except (ValueError, TypeError):
+            self.priority = 0
+        
         # Sort by occurrence time, then by priority (higher values first)
         self.sort_index = (self.scheduled_time, -self.priority)
     
     def mark_processed(self, processing_time: float) -> None:
         """Mark the event as processed"""
-
         self.processed = True
         self.processing_time = processing_time
     
@@ -69,21 +77,34 @@ class Event:
                priority: int = 0) -> 'Event':
         
         """Factory method to create an event"""
+        if target_ids is None:
+            target_ids = []
+        if data is None:
+            data = {}
+            
+        # Ensure priority is valid
+        if priority is None:
+            priority = 0
+            
+        try:
+            priority = int(priority)
+        except (ValueError, TypeError):
+            priority = 0
+            
         return cls(
-            sort_index=0.0,  # will be recalculated in __post_init__
+            sort_index=scheduled_time,
             event_type=event_type,
             creation_time=creation_time,
             scheduled_time=scheduled_time,
             source_id=source_id,
-            target_ids=target_ids or [],
-            data=data or {},
+            target_ids=target_ids,
+            data=data,
             handler=handler,
             priority=priority
         )
     
     def get_transmission_delay(self) -> float:
         """Returns the delay between creation and scheduled occurrence"""
-
         return self.scheduled_time - self.creation_time
     
     def get_processing_delay(self) -> float:
@@ -96,7 +117,7 @@ class Event:
         """Creates a clone of this event with a new scheduled time"""
         return Event.create(
             event_type=self.event_type,
-            creation_time=self.creation_time,  # Garde le temps de création original
+            creation_time=self.creation_time,
             scheduled_time=new_scheduled_time,
             source_id=self.source_id,
             target_ids=self.target_ids.copy(),
@@ -123,15 +144,18 @@ class Event:
     @classmethod
     def from_dict(cls, event_dict: Dict) -> 'Event':
         """Creates an event from a dictionary"""
+        # Ensure priority is included with a default value
+        priority = event_dict.get("priority", 0)
+        
         event = cls(
-            sort_index=0.0,  # Sera recalculé dans __post_init__
+            sort_index=0.0,  # Will be recalculated in __post_init__
             event_type=EventType(event_dict["event_type"]),
             creation_time=event_dict["creation_time"],
             scheduled_time=event_dict["scheduled_time"],
             source_id=event_dict["source_id"],
             target_ids=event_dict["target_ids"],
             data=event_dict["data"],
-            priority=event_dict["priority"]
+            priority=priority
         )
         
         event.id = event_dict["id"]

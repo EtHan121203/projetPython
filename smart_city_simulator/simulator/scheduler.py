@@ -39,14 +39,14 @@ class Scheduler:
         return heapq.heappop(self.event_queue)
     
     def schedule_periodic_event(self, 
-                               event_type: EventType,
-                               interval: float, 
-                               source_id: str,
-                               target_ids: List[str] = None,
-                               data: Dict[str, Any] = None,
-                               start_time: float = None,
-                               end_time: float = None,
-                               priority: int = 0) -> str:
+                                event_type: EventType,
+                                interval: float, 
+                                source_id: str,
+                                target_ids: List[str] = None,
+                                data: Dict[str, Any] = None,
+                                start_time: float = None,
+                                end_time: float = None,
+                                priority: int = 0) -> str:
         """
         Schedule an event to occur periodically at specified intervals
         
@@ -63,16 +63,11 @@ class Scheduler:
         Returns:
             ID of the periodic event registration
         """
-        if interval <= 0:
-            self.logger.error("Interval must be positive")
-            return None
-            
         pe_id = f"pe_{id(event_type)}_{source_id}_{time.time_ns()}"  # Unique ID
-        
+
         if start_time is None:
             start_time = self.current_time
-            
-        # Create event template
+
         event_template = {
             "event_type": event_type,
             "source_id": source_id,
@@ -80,18 +75,14 @@ class Scheduler:
             "data": data or {},
             "priority": priority
         }
-        
-        # Register the periodic event
+
         self.periodic_events[pe_id] = {
             "template": event_template,
             "interval": interval,
             "next_time": start_time,
             "end_time": end_time
         }
-        
-        # Schedule the first occurrence
         self._schedule_next_occurrence(pe_id)
-        
         return pe_id
     
     def cancel_periodic_event(self, pe_id: str) -> bool:
@@ -175,3 +166,12 @@ class Scheduler:
                 counts[event_type] = 0
             counts[event_type] += 1
         return counts
+
+    def schedule_periodic_check(self, interval=1.0):
+        """Schedule periodic system checks"""
+        return self.scheduler.schedule_periodic_event(
+            event_type=EventType.PERIODIC_CHECK,
+            interval=interval,  # Use a reasonable interval like 1 second
+            source_id="scheduler",
+            priority=0  # Explicitly set priority
+        )
