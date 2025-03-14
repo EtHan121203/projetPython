@@ -230,15 +230,43 @@ class DiscreteEventSimulator:
         """Adds a sensor to the simulation"""
         self.sensors[sensor.id] = sensor
 
+        # If the sensor has no node_id but has a valid location, try to attach it to the closest node
+        if (not hasattr(sensor, 'node_id') or not sensor.node_id) and hasattr(sensor, 'location'):
+            closest_node_id = None
+            min_distance = float('inf')
+            
+            for node_id, node in self.nodes.items():
+                if hasattr(node, 'location'):
+                    distance = ((sensor.location[0] - node.location[0]) ** 2 + 
+                               (sensor.location[1] - node.location[1]) ** 2) ** 0.5
+                    if distance < min_distance:
+                        min_distance = distance
+                        closest_node_id = node_id
+                        
+            if closest_node_id:
+                sensor.attach_to_node(closest_node_id)
+                self.logger.info(f"Sensor {sensor.id} auto-attached to closest node {closest_node_id} (distance: {min_distance:.2f})")
+
         # Schedule the first data generation event
         if sensor.generation_frequency > 0:
             first_gen_time = self.current_time + (1.0 / sensor.generation_frequency)
+            
+            # Use the sensor's attached node_id if available, otherwise use gateway_id
+            target_id = sensor.node_id if hasattr(sensor, 'node_id') and sensor.node_id else sensor.gateway_id
+            
+            # If there's no target node, use any running node
+            if not target_id:
+                for node_id, node in self.nodes.items():
+                    if node.state == NodeState.RUNNING:
+                        target_id = node_id
+                        break
+            
             event = Event.create(
                 event_type=EventType.DATA_GENERATION,
                 creation_time=self.current_time,
                 scheduled_time=first_gen_time,
                 source_id=sensor.id,
-                target_ids=[sensor.gateway_id],
+                target_ids=[target_id] if target_id else [],
                 priority=0
             )
             self.schedule_event(event)
@@ -472,12 +500,15 @@ class DiscreteEventSimulator:
             next_gen_interval = sensor.get_next_generation_time()
             next_gen_time = self.current_time + next_gen_interval
             
+            # Use the sensor's attached node_id if available, otherwise use gateway_id
+            target_id = sensor.node_id if hasattr(sensor, 'node_id') and sensor.node_id else sensor.gateway_id
+            
             next_gen_event = Event.create(
                 event_type=EventType.DATA_GENERATION,
                 creation_time=self.current_time,
                 scheduled_time=next_gen_time,
                 source_id=sensor_id,
-                target_ids=[sensor.gateway_id] if sensor.gateway_id else None,
+                target_ids=[target_id] if target_id else [],
                 priority=0
             )
             self.logger.debug(f"Scheduling next data generation for sensor {sensor_id} at t={next_gen_time}")
@@ -543,6 +574,7 @@ class DiscreteEventSimulator:
                         creation_time=self.current_time,
                         scheduled_time=self.current_time + 0.01,  # Small delay for storage
                         source_id=target_node_id,
+                        target_ids=[target_node_id],  # Make sure to include the target node ID
                         data={"data_id": data_id},
                         priority=data.priority.value if hasattr(data.priority, 'value') else data.priority
                     )
@@ -625,6 +657,7 @@ class DiscreteEventSimulator:
                     creation_time=self.current_time,
                     scheduled_time=self.current_time + 0.01,  # Small delay for storage
                     source_id=node_id,
+                    target_ids=[node_id],  # Make sure to include the target node ID
                     data={"data_id": data_id},
                     priority=data.priority.value if hasattr(data.priority, 'value') else data.priority
                 )
@@ -642,11 +675,28 @@ class DiscreteEventSimulator:
             return new_events
         
         data = self.data[data_id]
-        node_id = event.target_ids[0] if event.target_ids else None
         
-        # Check if node_id is None or doesn't exist
+        # Improved logic to always ensure we have a valid node_id
+        # First try from target_ids, then from source_id, then find any running node
+        node_id = None
+        if event.target_ids and len(event.target_ids) > 0:
+            node_id = event.target_ids[0]
+        
+        # If no target_id, try source_id (if it's a node)
+        if not node_id and event.source_id in self.nodes:
+            node_id = event.source_id
+        
+        # If still no node_id, find any running node
         if not node_id:
-            self.logger.warning(f"Invalid node ID: None specified for data storage")
+            for potential_node_id, node in self.nodes.items():
+                if node.state == NodeState.RUNNING:
+                    node_id = potential_node_id
+                    self.logger.info(f"No target node specified, selecting node {node_id} for data storage")
+                    break
+        
+        # Check if node_id is still None or doesn't exist
+        if not node_id:
+            self.logger.warning(f"No valid node found for data storage")
             return new_events
         
         # Check if node exists

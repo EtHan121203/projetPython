@@ -116,9 +116,12 @@ class Node:
         if data.id in self.stored_data:
             return True  # Already stored
         
-        if self.resources.allocate(0, 0, data.storage_size):
+        # Convert data storage size from bytes to MB, since resources are in MB
+        required_storage = data.storage_size / (1024 * 1024)
+        if self.resources.allocate(0, 0, required_storage):
             self.stored_data[data.id] = data
             data.update_location(self.id)
+            data.update_status("stored")
             return True
         
         return False
